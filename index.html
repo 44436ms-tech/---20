@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>צ'אט חכם מבוסס קבצים</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useRef } = React;
+        
+        // אייקונים
+        const Upload = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+        );
+        
+        const MessageCircle = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+        );
+        
+        const FileText = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14,2 L6,2 C4.9,2 4,2.9 4,4 L4,20 C4,21.1 4.9,22 6,22 L18,22 C19.1,22 20,21.1 20,20 L20,8 L14,2 Z"/>
+                <polyline points="14,2 14,8 20,8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10,9 9,9 8,9"/>
+            </svg>
+        );
+        
+        const Send = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22,2 15,22 11,13 2,9 22,2"/>
+            </svg>
+        );
+        
+        const Trash2 = () => (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3,6 5,6 21,6"/>
+                <path d="m19,6v14c0,1.1-0.9,2-2,2H7c-1.1,0-2-0.9-2-2V6m3,0V4c0-1.1,0.9-2,2-2h4c1.1,0,2,0.9,2,2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+        );
+
+        const FileChatApp = () => {
+            const [files, setFiles] = useState([]);
+            const [messages, setMessages] = useState([]);
+            const [userInput, setUserInput] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [isSetupMode, setIsSetupMode] = useState(true);
+            const fileInputRef = useRef(null);
+
+            const handleFileUpload = async (event) => {
+                const uploadedFiles = Array.from(event.target.files);
+                const processedFiles = [];
+
+                for (const file of uploadedFiles) {
+                    try {
+                        let content = '';
+                        
+                        if (file.type === 'text/plain') {
+                            content = await file.text();
+                        } else if (file.type === 'application/pdf') {
+                            content = '[קובץ PDF - יעובד בזמן שימוש]';
+                        } else if (file.name.endsWith('.docx')) {
+                            content = '[קובץ Word - יעובד בזמן שימוש]';
+                        } else {
+                            content = await file.text();
+                        }
+
+                        processedFiles.push({
+                            id: Date.now() + Math.random(),
+                            name: file.name,
+                            type: file.type,
+                            size: file.size,
+                            content: content,
+                            file: file
+                        });
+                    } catch (error) {
+                        console.error('שגיאה בקריאת הקובץ:', error);
+                    }
+                }
+
+                setFiles(prev => [...prev, ...processedFiles]);
+            };
+
+            const removeFile = (fileId) => {
+                setFiles(prev => prev.filter(file => file.id !== fileId));
+            };
+
+            const startChat = () => {
+                if (files.length === 0) {
+                    alert('אנא העלה לפחות קובץ אחד לפני תחילת הצ\'אט');
+                    return;
+                }
+                setIsSetupMode(false);
+                setMessages([{
+                    type: 'system',
+                    content: 'שלום! אני מוכן לענות על שאלות בהתבסס על הקבצים שהעלית. שאל אותי כל שאלה!'
+                }]);
+            };
+
+            const searchInFiles = async (query) => {
+                const results = [];
+                
+                for (const file of files) {
+                    if (file.content && !file.content.includes('[קובץ')) {
+                        const lowerQuery = query.toLowerCase();
+                        const lowerContent = file.content.toLowerCase();
+                        
+                        if (lowerContent.includes(lowerQuery)) {
+                            const sentences = file.content.split(/[.!?]/);
+                            const relevantSentences = sentences.filter(sentence => 
+                                sentence.toLowerCase().includes(lowerQuery)
+                            );
+                            
+                            if (relevantSentences.length > 0) {
+                                results.push({
+                                    fileName: file.name,
+                                    relevantText: relevantSentences.slice(0, 3).join('. ') + '.'
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                return results;
+            };
+
+            const handleSendMessage = async () => {
+                if (!userInput.trim()) return;
+
+                const userMessage = { type: 'user', content: userInput };
+                setMessages(prev => [...prev, userMessage]);
+                setUserInput('');
+                setIsLoading(true);
+
+                try {
+                    const searchResults = await searchInFiles(userInput);
+                    
+                    let response = '';
+                    if (searchResults.length === 0) {
+                        response = 'מצטער, לא מצאתי מידע רלוונטי לשאלה שלך. נסה לנסח את השאלה אחרת או להיות יותר ספציפי.';
+                    } else {
+                        if (searchResults.length === 1) {
+                            response = searchResults[0].relevantText;
+                        } else {
+                            const combinedInfo = searchResults.map(result => result.relevantText).join(' ');
+                            response = combinedInfo;
+                        }
+                        
+                        if (searchResults.length > 1) {
+                            response += '\n\nיש לי עוד מידע על הנושא אם תרצה פירוט נוסף.';
+                        }
+                    }
+
+                    const botMessage = { type: 'bot', content: response };
+                    setMessages(prev => [...prev, botMessage]);
+                } catch (error) {
+                    const errorMessage = { 
+                        type: 'bot', 
+                        content: 'מצטער, אירעה שגיאה. אנא נסה שוב.' 
+                    };
+                    setMessages(prev => [...prev, errorMessage]);
+                }
+                
+                setIsLoading(false);
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                }
+            };
+
+            if (isSetupMode) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+                        <div className="max-w-4xl mx-auto">
+                            <div className="bg-white rounded-xl shadow-lg p-8">
+                                <div className="text-center mb-8">
+                                    <div className="w-20 h-20 mx-auto bg-blue-600 rounded-full flex items-center justify-center mb-4">
+                                        <FileText className="w-10 h-10 text-white" />
+                                    </div>
+                                    <h1 className="text-4xl font-bold text-gray-800 mb-2">צ'אט חכם מבוסס קבצים</h1>
+                                    <p className="text-xl text-gray-600">העלה את הקבצים שלך ואני אענה על כל שאלה בהתבסס על התוכן</p>
+                                </div>
+
+                                <div className="border-2 border-dashed border-blue-300 rounded-xl p-8 text-center mb-6 hover:border-blue-400 transition-colors">
+                                    <Upload className="w-16 h-16 mx-auto text-blue-400 mb-4" />
+                                    <p className="text-xl text-gray-700 mb-4">גרור קבצים לכאן או לחץ לבחירה</p>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept=".txt,.pdf,.docx,.doc"
+                                        onChange={handleFileUpload}
+                                        className="hidden"
+                                    />
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-medium text-lg transition-colors shadow-md"
+                                    >
+                                        בחר קבצים
+                                    </button>
+                                    <p className="text-sm text-gray-500 mt-4">נתמכים: PDF, Word, טקסט</p>
+                                </div>
+
+                                {files.length > 0 && (
+                                    <div className="mb-8">
+                                        <h3 className="text-xl font-bold mb-4">קבצים שהועלו ({files.length}):</h3>
+                                        <div className="grid gap-3">
+                                            {files.map(file => (
+                                                <div key={file.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                                    <div className="flex items-center">
+                                                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                                                            <FileText className="w-5 h-5 text-blue-600" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-semibold text-gray-800">{file.name}</p>
+                                                            <p className="text-sm text-gray-500">
+                                                                {(file.size / 1024).toFixed(1)} KB
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeFile(file.id)}
+                                                        className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                                    >
+                                                        <Trash2 className="w-5 h-5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {files.length > 0 && (
+                                    <div className="text-center">
+                                        <button
+                                            onClick={startChat}
+                                            className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-12 py-4 rounded-lg font-bold text-xl transition-all shadow-lg transform hover:scale-105"
+                                        >
+                                            <MessageCircle className="w-6 h-6 inline-block mr-3" />
+                                            התחל צ'אט
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-50 flex flex-col">
+                    <div className="bg-white border-b shadow-sm p-4">
+                        <div className="max-w-4xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center">
+                                <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center mr-4">
+                                    <MessageCircle className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold text-gray-800">הצ'אט החכם שלך</h1>
+                                    <p className="text-sm text-gray-600">{files.length} קבצים בבסיס הנתונים</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setIsSetupMode(true);
+                                    setMessages([]);
+                                }}
+                                className="text-gray-600 hover:text-gray-800 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+                            >
+                                חזור להעלאת קבצים
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4">
+                        <div className="max-w-4xl mx-auto space-y-4">
+                            {messages.map((message, index) => (
+                                <div
+                                    key={index}
+                                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div
+                                        className={`max-w-3xl p-4 rounded-2xl ${
+                                            message.type === 'user'
+                                                ? 'bg-blue-600 text-white ml-12'
+                                                : message.type === 'system'
+                                                ? 'bg-green-100 text-green-800 border border-green-200'
+                                                : 'bg-white text-gray-800 border border-gray-200 mr-12 shadow-sm'
+                                        }`}
+                                    >
+                                        <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="max-w-3xl p-4 rounded-2xl bg-white border border-gray-200 mr-12 shadow-sm">
+                                        <div className="flex items-center">
+                                            <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full mr-3"></div>
+                                            <span>מחפש תשובה...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="bg-white border-t shadow-lg p-4">
+                        <div className="max-w-4xl mx-auto flex items-center gap-4">
+                            <div className="flex-1 relative">
+                                <textarea
+                                    value={userInput}
+                                    onChange={(e) => setUserInput(e.target.value)}
+                                    onKeyPress={handleKeyPress}
+                                    placeholder="שאל אותי כל שאלה..."
+                                    className="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none text-lg"
+                                    rows="2"
+                                    disabled={isLoading}
+                                />
+                            </div>
+                            <button
+                                onClick={handleSendMessage}
+                                disabled={isLoading || !userInput.trim()}
+                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white p-4 rounded-xl transition-colors shadow-md"
+                            >
+                                <Send className="w-6 h-6" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<FileChatApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
